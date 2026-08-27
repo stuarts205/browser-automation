@@ -1,1 +1,0 @@
-C:/LP/browser-automation/AGENTS.md
