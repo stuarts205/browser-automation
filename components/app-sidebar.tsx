@@ -1,34 +1,14 @@
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs"
-import { Plus, Workflow } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupAction,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-
-const dummyWorkflows = [
-  "dominant-wasp",
-  "honest-reindeer",
-  "expected-llama",
-  "essential-ocelot",
-  "creepy-echidna",
-  "eastern-silkworm",
-  "cultural-lion",
-  "proud-weasel",
-  "regional-bonobo",
-]
+import { WorkflowNav } from "@/features/workflows/components/workflow-nav"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
@@ -47,33 +27,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarTrigger className="shrink-0" />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Workflows</SidebarGroupLabel>
-          <SidebarGroupAction title="New workflow" asChild>
-            <Button variant="ghost" size="icon-sm">
-              <Plus />
-              <span className="sr-only">New workflow</span>
-            </Button>
-          </SidebarGroupAction>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-y-0.5">
-              {dummyWorkflows.map((workflow, index) => (
-                <SidebarMenuItem key={workflow}>
-                  <SidebarMenuButton
-                    size="lg"
-                    isActive={index === 0}
-                    tooltip={workflow}
-                  >
-                    <Workflow />
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      {workflow}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <WorkflowNav />
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:items-center">
         <UserButton
