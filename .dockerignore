@@ -1,2 +1,4 @@
-.claude/
-.agents/
+# .claude/ and .agents/ are intentionally NOT excluded here: Railpack's Node
+# provider detects nested package.json files inside them (bundled Clerk skill
+# templates), and excluding these dirs breaks the build with a file-not-found
+# error when Railpack tries to copy those files.
