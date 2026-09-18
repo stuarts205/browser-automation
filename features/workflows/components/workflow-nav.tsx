@@ -1,5 +1,7 @@
 "use client"
 import { Plus, Workflow as WorkflowIcon } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -31,6 +33,7 @@ export function WorkflowNav({
   createWorkflowAction,
 }: WorkflowNavProps) {
   const { state } = useSidebar()
+  const pathname = usePathname()
   const [isPending, startTransition] = useTransition()
 
   function handleCreateWorkflow() {
@@ -62,13 +65,22 @@ export function WorkflowNav({
                   </SidebarMenu>
                   <SidebarSeparator />
                   <SidebarMenu>
-                    {workflows.map((workflow) => (
-                      <SidebarMenuItem key={workflow.id}>
-                        <SidebarMenuButton size="lg">
-                          <span>{workflow.name}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
+                    {workflows.map((workflow) => {
+                      const href = `/workflows/${workflow.id}`
+                      return (
+                        <SidebarMenuItem key={workflow.id}>
+                          <SidebarMenuButton
+                            size="lg"
+                            asChild
+                            isActive={pathname === href}
+                          >
+                            <Link href={href}>
+                              <span>{workflow.name}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
                   </SidebarMenu>
                 </PopoverContent>
               </Popover>
@@ -90,13 +102,22 @@ export function WorkflowNav({
       </SidebarGroupAction>
       <SidebarGroupContent>
         <SidebarMenu className="gap-y-0.5">
-          {workflows.map((workflow) => (
-            <SidebarMenuItem key={workflow.id}>
-              <SidebarMenuButton size="lg">
-                <span>{workflow.name}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
+          {workflows.map((workflow) => {
+            const href = `/workflows/${workflow.id}`
+            return (
+              <SidebarMenuItem key={workflow.id}>
+                <SidebarMenuButton
+                  size="lg"
+                  asChild
+                  isActive={pathname === href}
+                >
+                  <Link href={href}>
+                    <span>{workflow.name}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
