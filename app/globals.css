@@ -135,3 +135,22 @@
     cursor: pointer !important;
   }
 }
+
+/* Other users' live cursors on the workflow canvas. Sized and colored here so
+   the arrow stays a small blue pointer even when the Liveblocks stylesheet is
+   late or missing (an unstyled SVG stretches to the full canvas width). */
+.lb-react-flow-cursors .lb-cursor {
+  position: relative;
+  width: 0;
+  height: 0;
+  color: #1177ff;
+  pointer-events: none;
+}
+
+.lb-react-flow-cursors .lb-cursor-pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1rem;
+  height: 1rem;
+}
