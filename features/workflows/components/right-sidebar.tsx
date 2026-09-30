@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useReactFlow, useStore } from "@xyflow/react"
 import { MoreHorizontal, Play, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
+import { deleteWorkflowAction } from "@/features/workflows/actions"
 import {
   nodeRegistry,
   type NodeDefinition,
@@ -85,8 +86,8 @@ function Section({
 // Editor tab — edits the fields of the selected node.
 // ---------------------------------------------------------------------------
 
-// A labelled editor field for a node property. Fields that set `multiline` in
-// the registry get a text area; everything else gets a single-line input.
+// A single editor field for a node property. Renders a multi-line textarea when
+// the field opts in via `multiline`, otherwise a single-line input.
 function Field({
   field,
   value,
@@ -96,24 +97,24 @@ function Field({
   value: string
   onChange: (value: string) => void
 }) {
+  if (field.multiline) {
+    return (
+      <Textarea
+        id={field.key}
+        value={value}
+        placeholder={field.placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-1.5">
-      {field.multiline ? (
-        <Textarea
-          id={field.key}
-          value={value}
-          placeholder={field.placeholder}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      ) : (
-        <Input
-          id={field.key}
-          value={value}
-          placeholder={field.placeholder}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </div>
+    <Input
+      id={field.key}
+      value={value}
+      placeholder={field.placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
   )
 }
 
@@ -174,64 +175,38 @@ const sections: { kind: StepNodeKind; label: string }[] = [
 // Every node type from the registry, filtered into the groups below.
 const definitions = Object.values(nodeRegistry)
 
-// Titles a new node after its type. Triggers are limited to one, so they keep
-// the plain label; other nodes are numbered ("Open URL 1", "Open URL 2"). The
-// number is one past the highest in use rather than a count, so deleting a node
-// never makes a later one repeat an existing title.
-function titleFor(def: NodeDefinition, nodes: StepNodeType[]) {
-  if (def.kind === "trigger") return def.label
-
-  const prefix = `${def.label} `
-  const highest = nodes
-    .filter(
-      (node) =>
-        node.data.type === def.type && node.data.title.startsWith(prefix)
-    )
-    .map((node) => Number(node.data.title.slice(prefix.length)))
-    .filter(Number.isInteger)
-    .reduce((max, n) => Math.max(max, n), 0)
-
-  return `${prefix}${highest + 1}`
-}
-
 // The Toolbar tab: a button per node type that adds it to the canvas.
 function Palette() {
+  // The shared React Flow store (lifted to a provider above the canvas and this
+  // sidebar) lets us read the current nodes/viewport and add to them from here.
   const { getNodes, getViewport, addNodes } = useReactFlow<StepNodeType>()
-
+  // The pane's measured size, used to find the center of the current view.
   const width = useStore((s) => s.width)
   const height = useStore((s) => s.height)
 
   const add = (type: NodeType) => {
-    void type
     const def = nodeRegistry[type]
     const nodes = getNodes()
 
-    if (
-      def.kind === "trigger" &&
-      nodes.some((n) => n.data.kind === "trigger")
-    ) {
-      toast.error("A workflow can only have one trigger")
+    // Only one trigger is allowed — a workflow has a single entry point.
+    if (def.kind === "trigger" && nodes.some((n) => n.data.kind === "trigger")) {
+      toast.error("A workflow can only have one trigger.")
       return
     }
 
-    // The canvas lives outside this component, so take its center in screen
-    // coordinates and convert that to a flow position.
+    // Number nodes of the same type (e.g. "Open URL 1", "Open URL 2") so
+    // duplicates stay easy to tell apart.
     const count = nodes.filter((n) => n.data.type === type).length
     const title = `${def.label} ${count + 1}`
 
+    // Drop the node in the middle of the current view. The viewport transform
+    // maps a flow point p to the screen as p * zoom + {x, y}, so the pane center
+    // in flow coordinates is (center - offset) / zoom.
     const { x, y, zoom } = getViewport()
     const position = {
       x: (width / 2 - x) / zoom,
       y: (height / 2 - y) / zoom,
     }
-
-    // const { domNode } = store.getState()
-    // if (!domNode) return
-    // const { x, y, width, height } = domNode.getBoundingClientRect()
-    // const position = screenToFlowPosition({
-    //   x: x + width / 2,
-    //   y: y + height / 2,
-    // })
 
     addNodes({
       id: crypto.randomUUID(),
@@ -284,7 +259,9 @@ function Palette() {
 // ---------------------------------------------------------------------------
 
 // The "..." menu for workflow-level actions.
-function ActionsMenu() {
+function ActionsMenu({ workflowId }: { workflowId: string }) {
+  const [isPending, startTransition] = useTransition()
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -295,9 +272,16 @@ function ActionsMenu() {
       <DropdownMenuContent align="start" className="min-w-48">
         <DropdownMenuItem
           variant="destructive"
+          disabled={isPending}
           className="text-xs [&_svg:not([class*='size-'])]:size-3.5"
-          onSelect={() => {
-            // TODO: delete the workflow, then navigate away.
+          onSelect={(e) => {
+            // Keep the menu mounted while the delete runs so the disabled state
+            // stays visible. Running inside a transition lets the router handle
+            // the action's redirect home on success.
+            e.preventDefault()
+            startTransition(async () => {
+              await deleteWorkflowAction(workflowId)
+            })
           }}
         >
           <Trash2 />
@@ -328,21 +312,18 @@ function RunButton() {
 // The sidebar itself — header on top, then the Toolbar / Editor tabs.
 // ---------------------------------------------------------------------------
 
-export function RightSidebar() {
+export function RightSidebar({ workflowId }: { workflowId: string }) {
   const [tab, setTab] = useState("toolbar")
 
   // TODO: read the currently selected node from React Flow.
-  const selected = useStore((s) => s.nodes.find((n) => n.selected)) as
-    StepNodeType | undefined
-
-  const [prevSelectedId, setPrevSelectedId] = useState(selected?.id)
-
-  if (selected && selected?.id !== prevSelectedId) {
-    setPrevSelectedId(selected?.id)
-    setTab("editor")
-  }
+  const selected = useStore((s) => s.nodes.find((n) => n.selected)) as StepNodeType | undefined
 
   // TODO: auto-switch to the Editor tab when the selection changes.
+  const [prevSelectedId, setPrevSelectedId] = useState(selected?.id)
+  if (selected && selected.id !== prevSelectedId) {
+    setPrevSelectedId(selected.id)
+    setTab("editor")
+  }
 
   return (
     <ResizablePanel
@@ -354,7 +335,7 @@ export function RightSidebar() {
     >
       <Tabs value={tab} onValueChange={setTab} className="size-full gap-0">
         <div className="flex items-center justify-between border-b border-border p-2">
-          <ActionsMenu />
+          <ActionsMenu workflowId={workflowId} />
           <RunButton />
         </div>
         <TabsList className="m-2 w-fit bg-background">
