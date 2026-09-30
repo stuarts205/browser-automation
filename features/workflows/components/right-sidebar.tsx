@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ResizablePanel } from "@/components/ui/resizable"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 import {
@@ -84,8 +85,9 @@ function Section({
 // Editor tab — edits the fields of the selected node.
 // ---------------------------------------------------------------------------
 
-// A single editor field for a node property.
-function FieldInput({
+// A labelled editor field for a node property. Fields that set `multiline` in
+// the registry get a text area; everything else gets a single-line input.
+function Field({
   field,
   value,
   onChange,
@@ -94,14 +96,24 @@ function FieldInput({
   value: string
   onChange: (value: string) => void
 }) {
-  // TODO: support a multiline field variant (textarea).
   return (
-    <Input
-      id={field.key}
-      value={value}
-      placeholder={field.placeholder}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <div className="flex flex-col gap-1.5">
+      {field.multiline ? (
+        <Textarea
+          id={field.key}
+          value={value}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : (
+        <Input
+          id={field.key}
+          value={value}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </div>
   )
 }
 
@@ -130,16 +142,14 @@ function Inspector({ node }: { node: StepNodeType | undefined }) {
             <div key={field.key} className="flex flex-col gap-1.5">
               <Label htmlFor={field.key} className="text-xs">
                 {field.label}
+                {field.required && <span className="text-destructive">*</span>}
               </Label>
-              <FieldInput
+              <Field
                 field={field}
                 value={values[field.key] ?? ""}
                 onChange={(value) => {
                   updateNodeData(node.id, {
-                      values: {
-                        ...values,
-                        [field.key]: value,
-                      }
+                    values: { ...values, [field.key]: value },
                   })
                 }}
               />
@@ -186,18 +196,20 @@ function titleFor(def: NodeDefinition, nodes: StepNodeType[]) {
 
 // The Toolbar tab: a button per node type that adds it to the canvas.
 function Palette() {
-  const {  getNodes, getViewport, addNodes } =
-    useReactFlow<StepNodeType>()
+  const { getNodes, getViewport, addNodes } = useReactFlow<StepNodeType>()
 
   const width = useStore((s) => s.width)
   const height = useStore((s) => s.height)
 
   const add = (type: NodeType) => {
-    void type;
+    void type
     const def = nodeRegistry[type]
     const nodes = getNodes()
 
-    if (def.kind === "trigger" && nodes.some((n) => n.data.kind === "trigger")) {
+    if (
+      def.kind === "trigger" &&
+      nodes.some((n) => n.data.kind === "trigger")
+    ) {
       toast.error("A workflow can only have one trigger")
       return
     }
@@ -207,7 +219,7 @@ function Palette() {
     const count = nodes.filter((n) => n.data.type === type).length
     const title = `${def.label} ${count + 1}`
 
-    const { x, y, zoom} = getViewport()
+    const { x, y, zoom } = getViewport()
     const position = {
       x: (width / 2 - x) / zoom,
       y: (height / 2 - y) / zoom,
@@ -320,7 +332,15 @@ export function RightSidebar() {
   const [tab, setTab] = useState("toolbar")
 
   // TODO: read the currently selected node from React Flow.
-  const selected = useStore((s) => s.nodes.find((n) => n.selected)) as StepNodeType | undefined
+  const selected = useStore((s) => s.nodes.find((n) => n.selected)) as
+    StepNodeType | undefined
+
+  const [prevSelectedId, setPrevSelectedId] = useState(selected?.id)
+
+  if (selected && selected?.id !== prevSelectedId) {
+    setPrevSelectedId(selected?.id)
+    setTab("editor")
+  }
 
   // TODO: auto-switch to the Editor tab when the selection changes.
 
