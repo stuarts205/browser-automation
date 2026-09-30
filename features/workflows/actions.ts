@@ -1,10 +1,14 @@
 "use server"
+
 import { auth } from "@clerk/nextjs/server"
 import { tasks } from "@trigger.dev/sdk"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+
 import type { helloWorldTask } from "@/trigger/example"
-import { createWorkflow } from "./data"
+
+import { liveblocks } from "@/lib/liveblocks"
+import { createWorkflow, deleteWorkflow } from "@/features/workflows/data"
 
 export async function createWorkflowAction(name: string) {
   const { orgId } = await auth()
@@ -19,7 +23,27 @@ export async function createWorkflowAction(name: string) {
   redirect(`/workflows/${workflow.id}`)
 }
 
-export async function runWorkflowAction(workflowId: string) {
+export async function deleteWorkflowAction(id: string) {
+  const { orgId } = await auth()
+
+  if (!orgId) {
+    throw new Error("No active organization")
+  }
+
+  const workflow = await deleteWorkflow(orgId, id)
+
+  if (!workflow) {
+    throw new Error("Workflow not found")
+  }
+
+  // The workflow id doubles as its Liveblocks room id — clean it up too.
+  await liveblocks.deleteRoom(id)
+
+  revalidatePath("/workflows", "layout")
+  redirect("/")
+}
+
+export async function runWorkflowAction() {
   const { orgId } = await auth()
 
   if (!orgId) {
@@ -27,8 +51,8 @@ export async function runWorkflowAction(workflowId: string) {
   }
 
   const handle = await tasks.trigger<typeof helloWorldTask>("hello-world", {
-    message: `Run workflow from right sidebar ${workflowId}`,
+    message: "Hello from right-sidebar"
   })
 
-  return { runId: handle.id, publicAccessToken: handle.publicAccessToken }
+  return handle
 }
