@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { useReactFlow, useStore } from "@xyflow/react"
 import { MoreHorizontal, Play, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 
 import {
   Accordion,
@@ -156,11 +158,69 @@ const sections: { kind: StepNodeKind; label: string }[] = [
 // Every node type from the registry, filtered into the groups below.
 const definitions = Object.values(nodeRegistry)
 
+// Titles a new node after its type. Triggers are limited to one, so they keep
+// the plain label; other nodes are numbered ("Open URL 1", "Open URL 2"). The
+// number is one past the highest in use rather than a count, so deleting a node
+// never makes a later one repeat an existing title.
+function titleFor(def: NodeDefinition, nodes: StepNodeType[]) {
+  if (def.kind === "trigger") return def.label
+
+  const prefix = `${def.label} `
+  const highest = nodes
+    .filter(
+      (node) =>
+        node.data.type === def.type && node.data.title.startsWith(prefix)
+    )
+    .map((node) => Number(node.data.title.slice(prefix.length)))
+    .filter(Number.isInteger)
+    .reduce((max, n) => Math.max(max, n), 0)
+
+  return `${prefix}${highest + 1}`
+}
+
 // The Toolbar tab: a button per node type that adds it to the canvas.
 function Palette() {
+  const {  getNodes, getViewport, addNodes } =
+    useReactFlow<StepNodeType>()
+
+  const width = useStore((s) => s.width)
+  const height = useStore((s) => s.height)
+
   const add = (type: NodeType) => {
-    // TODO: add the clicked node to the canvas (one trigger max).
-    void type
+    void type;
+    const def = nodeRegistry[type]
+    const nodes = getNodes()
+
+    if (def.kind === "trigger" && nodes.some((n) => n.data.kind === "trigger")) {
+      toast.error("A workflow can only have one trigger")
+      return
+    }
+
+    // The canvas lives outside this component, so take its center in screen
+    // coordinates and convert that to a flow position.
+    const count = nodes.filter((n) => n.data.type === type).length
+    const title = `${def.label} ${count + 1}`
+
+    const { x, y, zoom} = getViewport()
+    const position = {
+      x: (width / 2 - x) / zoom,
+      y: (height / 2 - y) / zoom,
+    }
+
+    // const { domNode } = store.getState()
+    // if (!domNode) return
+    // const { x, y, width, height } = domNode.getBoundingClientRect()
+    // const position = screenToFlowPosition({
+    //   x: x + width / 2,
+    //   y: y + height / 2,
+    // })
+
+    addNodes({
+      id: crypto.randomUUID(),
+      type: "step",
+      position,
+      data: { type, kind: def.kind, title, values: {} },
+    })
   }
 
   return (
