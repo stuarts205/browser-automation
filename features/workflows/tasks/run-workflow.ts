@@ -1,5 +1,5 @@
 import toposort from "toposort"
-import { logger, task } from "@trigger.dev/sdk"
+import { logger, metadata, task } from "@trigger.dev/sdk"
 import { getWorkflow } from "@/features/workflows/data"
 import { Stagehand } from "@browserbasehq/stagehand"
 import { nodeExecutors } from "@/features/workflows/nodes/node-executors"
@@ -7,6 +7,11 @@ import {
   interpolate,
   type NodeOutputs,
 } from "@/features/workflows/lib/interpolate"
+
+export type RunStep = {
+  nodeId: string
+  status: "pending" | "running" | "done" | "failed"
+}
 
 export const runWorkflowTask  = task({
   id: "run-workflow",
@@ -28,6 +33,19 @@ export const runWorkflowTask  = task({
 
     logger.log(`Running workflow ${workflow.name}`, { steps: order.length })
 
+    // Live status for the canvas, published to run metadata under "steps".
+    // Metadata drops a `set` whose value deep-equals what it already holds, so
+    // each change builds a new array instead of mutating this one in place.
+    let steps: RunStep[] = order.map((nodeId) => ({ nodeId, status: "pending" }))
+    metadata.set("steps", steps)
+
+    const setStatus = (nodeId: string, status: RunStep["status"]) => {
+      steps = steps.map((step) =>
+        step.nodeId === nodeId ? { ...step, status } : step
+      )
+      metadata.set("steps", steps)
+    }
+
     let stagehand: Stagehand | undefined
     const getStagehand = async () => {
       if(stagehand) return stagehand
@@ -48,21 +66,36 @@ export const runWorkflowTask  = task({
     for (const id of order) {
       const node = byId.get(id)!
       logger.log(`Running step: ${node.data.title}`)
-      // TODO: actually execute the node instead of just logging it, and report
-      // its progress so the UI can watch the run live.
       const executor = nodeExecutors[node.data.type]
       if (!executor) continue
-      const values = Object.fromEntries(
+
+      // Flush so "running" is pushed on its own; otherwise "done" would
+      // overwrite it before the periodic flush and the spinner never shows.
+      setStatus(id, "running")
+      await metadata.flush()
+
+      try {
+        const values = Object.fromEntries(
           Object.entries(node.data.values).map(([key, text]) => [
             key,
             interpolate({ text, outputs }),
           ])
         )
         outputs[id] = await executor({ values, getStagehand })
+      } catch (error) {
+        // Rethrowing fails the run with no output, so this flush is the only
+        // way the failed state reaches the canvas.
+        setStatus(id, "failed")
+        await metadata.flush()
+        throw error
+      }
+
+      setStatus(id, "done")
     }
 
     await stagehand?.close()
 
-    return { steps: order.length }
+    // Returned so a finished run's final state doesn't depend on a metadata flush.
+    return { steps }
   },
 })
