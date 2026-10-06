@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react"
 import { useReactFlow, useStore } from "@xyflow/react"
-import { MoreHorizontal, Play, Trash2 } from "lucide-react"
+import { MoreHorizontal, Play, Square, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -24,8 +24,13 @@ import { ResizablePanel } from "@/components/ui/resizable"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 
-import { deleteWorkflowAction, runWorkflowAction } from "@/features/workflows/actions"
+import {
+  cancelWorkflowAction,
+  deleteWorkflowAction,
+  runWorkflowAction,
+} from "@/features/workflows/actions"
 import { NodeIcon } from "@/features/workflows/components/node-icon"
+import { useWorkflowRuns } from "@/features/workflows/components/workflow-runs-provider"
 import {
   nodeRegistry,
   type NodeDefinition,
@@ -360,10 +365,30 @@ function ActionsMenu({ workflowId }: { workflowId: string }) {
   )
 }
 
-// Kicks off a run of the current workflow.
+// Kicks off a run of the current workflow, or — while one is live — cancels it.
 function RunButton({workflowId}: {workflowId: string}) {
   const { getNodes, getEdges } = useReactFlow<StepNodeType>()
   const [isPending, startTransition] = useTransition()
+  // At most one run is live at a time, so the first one found is the run to stop.
+  const liveRun = useWorkflowRuns().find((run) => run.isLive)
+
+  if (liveRun) {
+    return (
+      <Button
+        size="sm"
+        variant="destructive"
+        disabled={isPending}
+        onClick={() => {
+          startTransition(async () => {
+            await cancelWorkflowAction(liveRun.id)
+          })
+        }}
+      >
+        <Square fill="currentColor" />
+        Stop
+      </Button>
+    )
+  }
 
   return (
     <Button
