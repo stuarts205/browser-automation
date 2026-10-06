@@ -2,15 +2,31 @@ import toposort from "toposort"
 import { logger, metadata, task } from "@trigger.dev/sdk"
 import { getWorkflow } from "@/features/workflows/data"
 import { Stagehand } from "@browserbasehq/stagehand"
-import { nodeExecutors } from "@/features/workflows/nodes/node-executors"
+import {
+  nodeExecutors,
+  type StepOutput,
+} from "@/features/workflows/nodes/node-executors"
+import type { NodeType } from "@/features/workflows/nodes/node-registry"
 import {
   interpolate,
   type NodeOutputs,
 } from "@/features/workflows/lib/interpolate"
 
+// Everything the canvas and console show for one node in one run.
 export type RunStep = {
   nodeId: string
+  // Snapshotted from the node when the run starts: the registry gives `type`'s
+  // icon, and `title` is copied so renaming the node later doesn't rewrite
+  // what an old run shows.
+  type: NodeType
+  title: string
   status: "pending" | "running" | "done" | "failed"
+  // Set once the step finishes, whether it succeeded or threw.
+  durationMs?: number
+  // What the node produced. Only on a "done" step.
+  output?: StepOutput
+  // The thrown error's message. Only on a "failed" step.
+  error?: string
 }
 
 export const runWorkflowTask  = task({
@@ -33,15 +49,22 @@ export const runWorkflowTask  = task({
 
     logger.log(`Running workflow ${workflow.name}`, { steps: order.length })
 
-    // Live status for the canvas, published to run metadata under "steps".
-    // Metadata drops a `set` whose value deep-equals what it already holds, so
-    // each change builds a new array instead of mutating this one in place.
-    let steps: RunStep[] = order.map((nodeId) => ({ nodeId, status: "pending" }))
+    // Live state for the canvas and console, published to run metadata under
+    // "steps". Metadata drops a `set` whose value deep-equals what it already
+    // holds, so each change builds a new array instead of mutating this one in
+    // place.
+    let steps: RunStep[] = order.map((nodeId) => {
+      const { type, title } = byId.get(nodeId)!.data
+      return { nodeId, type, title, status: "pending" }
+    })
     metadata.set("steps", steps)
 
-    const setStatus = (nodeId: string, status: RunStep["status"]) => {
+    const updateStep = (
+      nodeId: string,
+      patch: Partial<Omit<RunStep, "nodeId" | "type" | "title">>
+    ) => {
       steps = steps.map((step) =>
-        step.nodeId === nodeId ? { ...step, status } : step
+        step.nodeId === nodeId ? { ...step, ...patch } : step
       )
       metadata.set("steps", steps)
     }
@@ -67,13 +90,20 @@ export const runWorkflowTask  = task({
       const node = byId.get(id)!
       logger.log(`Running step: ${node.data.title}`)
       const executor = nodeExecutors[node.data.type]
-      if (!executor) continue
+      if (!executor) {
+        // Only triggers get here (every action needs an executor). They do no
+        // work and have no output, so they just read as completed.
+        updateStep(id, { status: "done" })
+        continue
+      }
 
       // Flush so "running" is pushed on its own; otherwise "done" would
       // overwrite it before the periodic flush and the spinner never shows.
-      setStatus(id, "running")
+      updateStep(id, { status: "running" })
       await metadata.flush()
 
+      const startedAt = Date.now()
+      let output: StepOutput
       try {
         const values = Object.fromEntries(
           Object.entries(node.data.values).map(([key, text]) => [
@@ -81,11 +111,15 @@ export const runWorkflowTask  = task({
             interpolate({ text, outputs }),
           ])
         )
-        outputs[id] = await executor({ values, getStagehand })
+        output = await executor({ values, getStagehand })
       } catch (error) {
         // Rethrowing fails the run with no output, so this flush is the only
         // way the failed state reaches the canvas.
-        setStatus(id, "failed")
+        updateStep(id, {
+          status: "failed",
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        })
         await metadata.flush()
         // Rethrowing also skips the close below, which would leave the
         // Browserbase session "running" until it times out. A close failure
@@ -94,7 +128,12 @@ export const runWorkflowTask  = task({
         throw error
       }
 
-      setStatus(id, "done")
+      outputs[id] = output
+      updateStep(id, {
+        status: "done",
+        durationMs: Date.now() - startedAt,
+        output,
+      })
     }
 
     await stagehand?.close()

@@ -1,4 +1,5 @@
 import type { Stagehand } from "@browserbasehq/stagehand"
+import type { RunMetadata } from "@trigger.dev/sdk"
 
 import type {
   ActionNodeType,
@@ -16,7 +17,11 @@ export type NodeContext = {
   getStagehand: () => Promise<Stagehand>
 }
 
-export type NodeExecutor = (ctx: NodeContext) => Promise<unknown>
+// What a node returns. It's published on the run's step (run metadata, then the
+// run output), so it has to be plain JSON — a return that isn't won't compile.
+export type StepOutput = RunMetadata[string]
+
+export type NodeExecutor = (ctx: NodeContext) => Promise<StepOutput>
 
 export const nodeExecutors: Partial<Record<NodeType, NodeExecutor>> = {
   "open-url": async ({ values, getStagehand }) => 
