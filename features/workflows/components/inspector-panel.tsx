@@ -1,5 +1,10 @@
+import { SessionReplay } from "@/features/workflows/components/session-replay"
 import type { WorkflowRun } from "@/features/workflows/components/workflow-runs-provider"
 import type { RunStep } from "@/features/workflows/tasks/run-workflow"
+
+// What the pane shows: one step's result, or the recording of a whole run.
+export type InspectorTarget =
+  { kind: "step"; step: RunStep } | { kind: "replay"; sessionId: string }
 
 // What to say when a step has neither an error nor an output.
 function emptyNote(step: RunStep, isLive: boolean) {
@@ -13,15 +18,22 @@ function emptyNote(step: RunStep, isLive: boolean) {
   }
 }
 
-// The selected step's result: its error if it failed, else its output as
-// formatted JSON, else a short note on why there's nothing.
+// The selected row's result. For a step: its error if it failed, else its
+// output as formatted JSON, else a short note on why there's nothing. For a
+// run's replay: the recording, in place of any step's output.
 export function InspectorPanel({
   run,
-  step,
+  target,
 }: {
   run: WorkflowRun
-  step: RunStep
+  target: InspectorTarget
 }) {
+  if (target.kind === "replay") {
+    return <SessionReplay sessionId={target.sessionId} />
+  }
+
+  const { step } = target
+
   if (step.error !== undefined) {
     return (
       <pre className="p-3 font-mono text-xs wrap-break-word whitespace-pre-wrap text-destructive">
