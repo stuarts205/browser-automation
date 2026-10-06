@@ -87,6 +87,10 @@ export const runWorkflowTask  = task({
         // way the failed state reaches the canvas.
         setStatus(id, "failed")
         await metadata.flush()
+        // Rethrowing also skips the close below, which would leave the
+        // Browserbase session "running" until it times out. A close failure
+        // is swallowed so it can't replace the step's real error.
+        await stagehand?.close().catch(() => {})
         throw error
       }
 
