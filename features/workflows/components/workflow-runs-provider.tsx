@@ -22,6 +22,10 @@ export type WorkflowRun = {
   // True while the run is queued or executing.
   isLive: boolean
   steps: RunStep[]
+  // The Browserbase session the run drove, for replay. Undefined until the run
+  // finishes (the recording lags the session close), and for runs that never
+  // opened a browser or that threw before returning.
+  sessionId?: string
 }
 
 type LatestRunSteps = Pick<WorkflowRun, "steps" | "isLive">
@@ -46,6 +50,8 @@ function toWorkflowRun(run: RealtimeWorkflowRun): WorkflowRun {
     // (or if it threw and has no output) fall back to the live metadata.
     steps:
       run.output?.steps ?? (run.metadata?.steps as RunStep[] | undefined) ?? [],
+    // Final output only, never live metadata: it isn't replayable before then.
+    sessionId: run.output?.sessionId,
   }
 }
 

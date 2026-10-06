@@ -1,3 +1,4 @@
+import { CirclePlay } from "lucide-react"
 import prettyMilliseconds from "pretty-ms"
 
 import { cn } from "@/lib/utils"
@@ -9,9 +10,24 @@ import {
 } from "@/features/workflows/components/workflow-runs-provider"
 import type { RunStep } from "@/features/workflows/tasks/run-workflow"
 
-// Every run has a step per node, so a step is identified by its run as well as
-// its node.
-export type StepSelection = { runId: string; nodeId: string }
+// A row in the console is either one step of a run or the replay of the whole
+// run. Every run has a step per node, so a step is identified by its run as
+// well as its node.
+export type ConsoleSelection =
+  | { kind: "step"; runId: string; nodeId: string }
+  | { kind: "replay"; runId: string }
+
+export function isSameSelection(
+  a: ConsoleSelection | null,
+  b: ConsoleSelection
+) {
+  if (!a || a.runId !== b.runId) return false
+  if (a.kind === "step" && b.kind === "step") return a.nodeId === b.nodeId
+  return a.kind === b.kind
+}
+
+const ROW_CLASS =
+  "flex w-full items-center gap-2 py-1 pr-3 pl-6 text-left text-xs hover:bg-accent/50"
 
 // "WAITING_FOR_DEPLOY" -> "Waiting for deploy"
 function formatStatus(status: string) {
@@ -28,7 +44,7 @@ function StepRow({
   run: WorkflowRun
   step: RunStep
   isSelected: boolean
-  onSelect: (selection: StepSelection) => void
+  onSelect: (selection: ConsoleSelection) => void
 }) {
   // A run that ends mid-step (cancelled, crashed) leaves "running" behind, so
   // only spin while the run is actually live.
@@ -43,9 +59,11 @@ function StepRow({
       <button
         type="button"
         aria-pressed={isSelected}
-        onClick={() => onSelect({ runId: run.id, nodeId: step.nodeId })}
+        onClick={() =>
+          onSelect({ kind: "step", runId: run.id, nodeId: step.nodeId })
+        }
         className={cn(
-          "flex w-full items-center gap-2 py-1 pr-3 pl-6 text-left text-xs hover:bg-accent/50",
+          ROW_CLASS,
           isSelected && "bg-accent",
           isInactive && "opacity-50",
           isFailed && "text-destructive"
@@ -66,13 +84,42 @@ function StepRow({
   )
 }
 
-// Every run of the workflow, newest first, each with its steps listed below it.
+// The run's recording, as a row among its steps. It stands for the whole run
+// rather than a step, so it gets a plain icon instead of a node's accent chip.
+function ReplayRow({
+  run,
+  isSelected,
+  onSelect,
+}: {
+  run: WorkflowRun
+  isSelected: boolean
+  onSelect: (selection: ConsoleSelection) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        aria-pressed={isSelected}
+        onClick={() => onSelect({ kind: "replay", runId: run.id })}
+        className={cn(ROW_CLASS, isSelected && "bg-accent")}
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <CirclePlay className="size-3.5" />
+        </span>
+        <span className="min-w-0 truncate font-medium">Replay</span>
+      </button>
+    </li>
+  )
+}
+
+// Every run of the workflow, newest first, each with its steps listed below it
+// and, once it has a recording, a replay row after them.
 export function LogsPanel({
   selected,
   onSelect,
 }: {
-  selected: StepSelection | null
-  onSelect: (selection: StepSelection) => void
+  selected: ConsoleSelection | null
+  onSelect: (selection: ConsoleSelection) => void
 }) {
   const runs = useWorkflowRuns()
 
@@ -101,12 +148,24 @@ export function LogsPanel({
                 key={step.nodeId}
                 run={run}
                 step={step}
-                isSelected={
-                  selected?.runId === run.id && selected.nodeId === step.nodeId
-                }
+                isSelected={isSameSelection(selected, {
+                  kind: "step",
+                  runId: run.id,
+                  nodeId: step.nodeId,
+                })}
                 onSelect={onSelect}
               />
             ))}
+            {run.sessionId !== undefined && !run.isLive && (
+              <ReplayRow
+                run={run}
+                isSelected={isSameSelection(selected, {
+                  kind: "replay",
+                  runId: run.id,
+                })}
+                onSelect={onSelect}
+              />
+            )}
           </ul>
         </section>
       ))}

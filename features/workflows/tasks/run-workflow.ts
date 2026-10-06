@@ -70,6 +70,10 @@ export const runWorkflowTask  = task({
     }
 
     let stagehand: Stagehand | undefined
+    // The Browserbase session this run drove, for replaying it afterwards. Read
+    // right after `init()` because `close()` clears it from Stagehand. Stays
+    // undefined if no node ever opened a browser.
+    let sessionId: string | undefined
     const getStagehand = async () => {
       if(stagehand) return stagehand
       stagehand = new Stagehand({
@@ -79,6 +83,7 @@ export const runWorkflowTask  = task({
         disablePino: true,
       })
       await stagehand.init()
+      sessionId = stagehand.browserbaseSessionID
       return stagehand
     }
 
@@ -139,6 +144,8 @@ export const runWorkflowTask  = task({
     await stagehand?.close()
 
     // Returned so a finished run's final state doesn't depend on a metadata flush.
-    return { steps }
+    // `sessionId` is deliberately output-only: the recording isn't ready until
+    // the session closes, so nothing should offer a replay while the run is live.
+    return { steps, sessionId }
   },
 })
